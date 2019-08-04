@@ -10,12 +10,11 @@
 #define PLUGIN_VALUENAME3_243 "Override"
 #define PLUGIN_243_MAX_SETTINGS 4
 #define PLUGIN_243_PERIODS_COUNT 4 
-#define P243_PERIOD 					PCONFIG(2)
-#define P243_PERIOD_ONCE			0
-#define P243_PERIOD_DAILY			1
+#define P243_PERIOD 			PCONFIG(2)
+#define P243_PERIOD_ONCE		0
+#define P243_PERIOD_DAILY		1
 #define P243_PERIOD_WEEKLY		2
 #define P243_PERIOD_MONTHLY		3
-//#define P243_DAYS							*((uint32_t *) &(Settings.TaskDevicePluginConfig[event->TaskIndex][3]))
 #define P243_DT_START(n)			PCONFIG_LONG(n)
 #define P243_DT_END(n)				ExtraTaskSettings.TaskDevicePluginConfigLong[n]
 #define P243_SETVALUE(n)			PCONFIG_FLOAT(n)
@@ -105,7 +104,7 @@ boolean Plugin_243(byte function, struct EventStruct *event, String& string)
 						if (((x % 8) == 0) & (x /8 > 0)) addHtml(F("</TR><TR>"));
 						addHtml(F("<TD>"));
 						
-						addHtml(String(x+1));
+						addHtml(P243_PERIOD == P243_PERIOD_WEEKLY ? weekday_str(x) : String(x+1));
 						addCheckBox(String(F("p243_day")) + (x),days[x]);
 						addHtml(F("</TD>"));
 					}
@@ -164,59 +163,59 @@ boolean Plugin_243(byte function, struct EventStruct *event, String& string)
       {
         LoadTaskSettings(event->TaskIndex);
 
-				if (!P243_VAR_OVERRIDE) {
-				bool isDay;
-				if ((P243_PERIOD == P243_PERIOD_ONCE) | (P243_PERIOD == P243_PERIOD_DAILY))
-					isDay = true;
-				else
+		if (!P243_VAR_OVERRIDE) {
+			bool isDay;
+			if ((P243_PERIOD == P243_PERIOD_ONCE) | (P243_PERIOD == P243_PERIOD_DAILY))
+				isDay = true;
+			else
+			{
+				bool days[31];
+				LoadClockSet(P243_PERIOD, days, event);
+				isDay = ((P243_PERIOD == P243_PERIOD_WEEKLY) & days[weekday()-1]) |
+						((P243_PERIOD == P243_PERIOD_MONTHLY) & days[day()-1]);
+			}
+			
+			P243_VAR_RUNNING = 0;
+			if (isDay)
+			{	 
+				time_t curtime = now();
+				// if not an exact date - get time of a day
+				if (P243_PERIOD != P243_PERIOD_ONCE) 
 				{
-					bool days[31];
-					LoadClockSet(P243_PERIOD, days, event);
-					isDay = ((P243_PERIOD == P243_PERIOD_WEEKLY) & days[weekday()-1]) |
-									((P243_PERIOD == P243_PERIOD_MONTHLY) & days[day()-1]);
+					curtime %= 60*60*24;
 				}
 
-					P243_VAR_RUNNING = 0;
-				if (isDay)
-				{	 
-					time_t curtime = now();
-					// if not an exact date - get time of a day
-					if (P243_PERIOD != P243_PERIOD_ONCE) 
+				for (byte x = 0; x < PLUGIN_243_MAX_SETTINGS; x++)
+				{
+					time_t dt_end = P243_DT_END(x);
+					// for ability setting TimeEnd on the next day
+					if (dt_end == 0)
 					{
-						curtime %= 60*60*24;
+						dt_end = 60*60*24;
 					}
 
-					for (byte x = 0; x < PLUGIN_243_MAX_SETTINGS; x++)
+					if ((curtime >= P243_DT_START(x)) && (curtime < dt_end))
 					{
-						time_t dt_end = P243_DT_END(x);
-						// for ability setting TimeEnd on the next day
-						if (dt_end == 0)
-						{
-							dt_end = 60*60*24;
-						}
-
-						if ((curtime >= P243_DT_START(x)) && (curtime < dt_end))
-						{
-								String log = F("SCHED: Running at period ");
-        	  	log += x;
-								log += F(" with value ");
-							log += P243_SETVALUE(x);
-	          	addLog(LOG_LEVEL_INFO, log);
-								P243_VAR_RUNNING = 1;
-								P243_VAR_RUNVALUE = P243_SETVALUE(x);
-							break;
-						}
+						String log = F("SCHED: Running at period ");
+		        	  	log += x;
+						log += F(" with value ");
+						log += P243_SETVALUE(x);
+	    		      	addLog(LOG_LEVEL_INFO, log);
+						P243_VAR_RUNNING = x+1;
+						P243_VAR_RUNVALUE = P243_SETVALUE(x);
+						break;
 					}
 				}
-				}
+			}
+		}
 
-				if (P243_VAR_RUNNING)
-				{
-					UserVar[PCONFIG(0) * VARS_PER_TASK + PCONFIG(1)] = P243_VAR_RUNVALUE;
-					sendData(event);
-				}
-				success = true;
-        break;
+		if (P243_VAR_RUNNING>0)
+		{
+			UserVar[PCONFIG(0) * VARS_PER_TASK + PCONFIG(1)] = P243_VAR_RUNVALUE;
+			sendData(event);
+		}
+		success = true;
+    	break;
       }
   }
   return success;
